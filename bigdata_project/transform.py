@@ -40,6 +40,9 @@ OUTPUT_COLUMNS = REQUIRED_COLUMNS + [
     "source_file",
 ]
 
+NYC_LAT_MIN, NYC_LAT_MAX = 40.4, 41.0
+NYC_LNG_MIN, NYC_LNG_MAX = -74.3, -73.6
+
 
 def iter_csv_chunks(csv_path: Path, chunksize: int = 100_000) -> Iterator[pd.DataFrame]:
     yield from pd.read_csv(
@@ -87,14 +90,27 @@ def normalize_chunk(chunk: pd.DataFrame, source_file: str) -> pd.DataFrame:
     for column in numeric_columns:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
+        numeric_columns = ["start_lat", "start_lng", "end_lat", "end_lng"]
+    for column in numeric_columns:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+
+    lat, lng = frame["start_lat"], frame["start_lng"]
+    outside_nyc = lat.notna() & (
+        (lat < NYC_LAT_MIN) | (lat > NYC_LAT_MAX)
+        | (lng < NYC_LNG_MIN) | (lng > NYC_LNG_MAX)
+    )
+    frame = frame[~outside_nyc]
+
     frame = frame[OUTPUT_COLUMNS]
     return frame
 
 
 def dataframe_to_documents(frame: pd.DataFrame) -> list[dict]:
-    records = frame.to_dict(orient="records")
-    for record in records:
-        record["_id"] = f"{record['ride_id']}::{record['source_file']}"
-        record["started_at"] = record["started_at"].isoformat()
-        record["ended_at"] = record["ended_at"].isoformat()
-    return records
+    documents = []
+    for record in frame.to_dict(orient="records"):
+        document = {key: value for key, value in record.items() if pd.notna(value)}
+        document["_id"] = "{}::{}".format(record["ride_id"], record["source_file"])
+        document["started_at"] = record["started_at"].to_pydatetime()
+        document["ended_at"] = record["ended_at"].to_pydatetime()
+        documents.append(document)
+    return documents

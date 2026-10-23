@@ -1,27 +1,39 @@
-from __future__ import annotations
-
-import csv
 import sys
+from collections import defaultdict
 
 
-def emit(metric: str, dimension: str, duration: float) -> None:
-    print(f"{metric}\t{dimension}\t1\t{duration}")
-
-
-def main() -> None:
-    reader = csv.DictReader(sys.stdin, delimiter="\t")
-    for row in reader:
+def main():
+    acc = defaultdict(lambda: [0, 0.0, 0.0])  # count, sum, sum of squares
+    for line in sys.stdin:
+        f = line.rstrip("\n").split("\t")
+        if len(f) != 9 or f[0] == "trip_year":
+            continue
         try:
-            duration = float(row["trip_duration_minutes"])
-        except (TypeError, ValueError):
+            d = float(f[8])
+        except ValueError:
             continue
 
-        month_key = f"{row['trip_year']}-{str(row['trip_month']).zfill(2)}"
-        emit("rides_by_month", month_key, duration)
-        emit("duration_by_member_type", row["member_casual"], duration)
-        emit("rides_by_bike_type", row["rideable_type"], duration)
-        emit("rides_by_day_of_week", row["trip_day_of_week"], duration)
-        emit("rides_by_start_station", row["start_station_name"], duration)
+        year, month, dow, hour, member, bike, start_station, _end, _dur = f
+        keys = [
+            ("rides_by_month", "{}-{}".format(year, month.zfill(2))),
+            ("duration_by_member_type", member),
+            ("rides_by_bike_type", bike),
+            ("rides_by_day_of_week", dow),
+            ("rides_by_hour", "{}|{}".format(hour.zfill(2), member)),
+        ]
+        if start_station == "unknown":
+            keys.append(("rides_without_start_station", "all"))
+        else:
+            keys.append(("rides_by_start_station", start_station))
+
+        for metric, dimension in keys:
+            a = acc["{}|{}".format(metric, dimension)]
+            a[0] += 1
+            a[1] += d
+            a[2] += d * d
+
+    for key, a in acc.items():
+        print("{}\t{}\t{}\t{}".format(key, a[0], repr(a[1]), repr(a[2])))
 
 
 if __name__ == "__main__":

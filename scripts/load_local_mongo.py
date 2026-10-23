@@ -11,6 +11,7 @@ from bigdata_project.manifest import load_manifest, select_entries
 from bigdata_project.mongo_ops import (
     create_quality_report,
     ensure_local_indexes,
+    ensure_trip_indexes,
     finish_import_run,
     get_imported_file_status,
     get_local_database,
@@ -47,6 +48,8 @@ def main() -> None:
     )
     processed_files = 0
     skipped_files = 0
+    total_inserted = 0
+    total_modified = 0
 
     try:
         for entry in entries:
@@ -68,12 +71,16 @@ def main() -> None:
 
             total_input_rows = 0
             total_output_rows = 0
+            inserted = 0
+            modified = 0
             for csv_file in csv_files:
                 for chunk in iter_csv_chunks(csv_file):
                     total_input_rows += len(chunk.index)
                     normalized = normalize_chunk(chunk, csv_file.name)
                     total_output_rows += len(normalized.index)
-                    insert_cleaned_documents(db, dataframe_to_documents(normalized))
+                    counts = insert_cleaned_documents(db, dataframe_to_documents(normalized))
+                    inserted += counts["inserted"]
+                    modified += counts["modified"]
 
             record_import_status(
                 db,
@@ -85,6 +92,8 @@ def main() -> None:
                     "month": entry["month"],
                     "input_rows": total_input_rows,
                     "output_rows": total_output_rows,
+                    "inserted": inserted,
+                    "modified": modified,
                 },
             )
             create_quality_report(
@@ -94,20 +103,33 @@ def main() -> None:
                 output_rows=total_output_rows,
             )
             processed_files += 1
+            total_inserted += inserted
+            total_modified += modified
             print(
                 f"Loaded {entry['file_name']} into MongoDB "
-                f"({total_output_rows}/{total_input_rows} rows kept)"
+                f"({total_output_rows}/{total_input_rows} rows kept, "
+                f"inserted {inserted}, modified {modified})"
             )
     except Exception:
         finish_import_run(db, run_id, "failed")
         raise
 
+    ensure_trip_indexes(db)
+    documents = db.tripdata_cleaned_local.count_documents({})
+    print("Documents in collection:", documents)
+
     finish_import_run(
         db,
         run_id,
         "completed",
-        summary={"processed_files": processed_files, "skipped_files": skipped_files},
-        )
+        summary={
+            "processed_files": processed_files,
+            "skipped_files": skipped_files,
+            "inserted": total_inserted,
+            "modified": total_modified,
+            "documents_in_collection": documents,
+        },
+    )
 
 
 if __name__ == "__main__":

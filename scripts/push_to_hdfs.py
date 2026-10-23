@@ -36,17 +36,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def write_monthly_tsv(csv_file: Path, output_dir: Path) -> Path:
+    """Write a header-less TSV (Hadoop Streaming reads it line by line).
+
+    An existing TSV is reused, so after changing the cleaning rules delete
+    data/processed before running this script again.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{csv_file.stem}.tsv"
     if output_path.exists():
         return output_path
 
-    with output_path.open("w", encoding="utf-8", newline="") as file_handle:
+    temp_path = output_path.with_name(output_path.name + ".part")
+    with temp_path.open("w", encoding="utf-8", newline="") as file_handle:
         writer = csv.writer(file_handle, delimiter="\t")
-        writer.writerow(HADOOP_COLUMNS)
         for chunk in iter_csv_chunks(csv_file):
             normalized = normalize_chunk(chunk, csv_file.name)
             writer.writerows(normalized[HADOOP_COLUMNS].itertuples(index=False, name=None))
+    temp_path.replace(output_path)
     return output_path
 
 
@@ -79,7 +85,7 @@ def main() -> None:
             upload_file_to_hdfs(local_tsv, hdfs_path)
             record_import_status(
                 db,
-                file_name=entry["file_name"],
+                file_name=entry["file_name"] + "#hdfs",
                 status="uploaded_hdfs",
                 extracted_files=[str(csv_file)],
                 details={"hdfs_path": hdfs_path},
