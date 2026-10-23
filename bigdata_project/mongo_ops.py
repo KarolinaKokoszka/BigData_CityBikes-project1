@@ -26,6 +26,11 @@ def ensure_local_indexes(db) -> None:
     db.import_runs.create_index("run_id", unique=True)
 
 
+def ensure_trip_indexes(db) -> None:
+    db.tripdata_cleaned_local.create_index("started_at")
+    db.tripdata_cleaned_local.create_index("start_station_id")
+
+
 def record_import_status(
     db,
     file_name: str,
@@ -86,13 +91,16 @@ def get_imported_file_status(db, file_name: str) -> str | None:
     return document.get("status")
 
 
-def insert_cleaned_documents(db, documents: list[dict]) -> None:
-    operations = [
-        UpdateOne({"_id": document["_id"]}, {"$set": document}, upsert=True)
-        for document in documents
-    ]
-    if operations:
-        db.tripdata_cleaned_local.bulk_write(operations, ordered=False)
+def insert_cleaned_documents(db, documents: list[dict]) -> dict:
+    """Upsert documents by _id; return how many were inserted and modified."""
+    operations = []
+    for document in documents:
+        fields = {key: value for key, value in document.items() if key != "_id"}
+        operations.append(UpdateOne({"_id": document["_id"]}, {"$set": fields}, upsert=True))
+    if not operations:
+        return {"inserted": 0, "modified": 0}
+    result = db.tripdata_cleaned_local.bulk_write(operations, ordered=False)
+    return {"inserted": result.upserted_count, "modified": result.modified_count}
 
 
 def create_quality_report(
