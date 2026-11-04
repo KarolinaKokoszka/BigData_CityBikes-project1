@@ -12,7 +12,12 @@ services:
       - mongo_data:/data/db
 
   namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    build:
+      context: .
+      dockerfile: docker/hadoop-python/Dockerfile
+      args:
+        BASE_IMAGE: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    image: bigdata-hadoop-namenode-python:latest
     container_name: bigdata-namenode
     restart: unless-stopped
     environment:
@@ -26,7 +31,12 @@ services:
       - namenode_data:/hadoop/dfs/name
 
   datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    build:
+      context: .
+      dockerfile: docker/hadoop-python/Dockerfile
+      args:
+        BASE_IMAGE: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    image: bigdata-hadoop-datanode-python:latest
     container_name: bigdata-datanode
     restart: unless-stopped
     environment:

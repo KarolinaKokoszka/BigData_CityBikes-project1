@@ -42,7 +42,7 @@ with left:
     st.line_chart(monthly.set_index("period")["ride_count"])
 
 with right:
-    st.subheader("Sredni czas przejazdu per typ klienta")
+    st.subheader("Sredni czas przejazdu per typ klienta (w minutach)")
     if avg_duration is not None:
         avg_duration.columns = ["member_casual", "trip_duration_minutes"]
         st.bar_chart(avg_duration.set_index("member_casual")["trip_duration_minutes"])

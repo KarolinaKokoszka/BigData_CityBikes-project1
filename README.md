@@ -42,13 +42,16 @@ HDFS_USER=root
 
 ## Start uslug
 ```powershell
-docker compose up -d
+docker compose up -d --build
 ```
 
 To uruchomi:
 - lokalne `MongoDB`,
 - `HDFS NameNode`,
 - `HDFS DataNode`.
+
+Obrazy Hadoop budowane sa lokalnie z `docker/hadoop-python/Dockerfile`, zeby `python3`
+byl dostepny dla `Hadoop Streaming`.
 
 ## Kolejnosc uruchamiania pipeline
 ### 1. Zbudowanie manifestu

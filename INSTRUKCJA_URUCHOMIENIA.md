@@ -23,7 +23,7 @@ HDFS_USER=root
 ## 3. Start baz i HDFS
 
 ```powershell
-docker compose up -d
+docker compose up -d --build
 ```
 
 ## 4. Test na 1 miesiacu

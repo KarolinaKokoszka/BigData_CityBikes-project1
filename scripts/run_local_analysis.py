@@ -46,7 +46,7 @@ def main() -> None:
     top_start_stations.to_csv(SETTINGS.outputs_dir / "top_start_stations.csv")
     summary = {
         "row_count": int(len(df.index)),
-        "unique_rides": int(df["rideable_type"].count()),
+        "unique_rides": int(df["ride_id"].nunique()),
         "member_categories": sorted(df["member_casual"].dropna().unique().tolist()),
         "bike_types": sorted(df["rideable_type"].dropna().unique().tolist()),
     }

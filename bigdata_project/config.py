@@ -62,7 +62,7 @@ def get_settings() -> Settings:
         years=_parse_years(os.getenv("TRIPDATA_YEARS", "2024,2025")),
         local_mongo_uri=os.getenv(
             "LOCAL_MONGO_URI",
-            "mongodb://bigdata:bigdata@localhost:27017/?authSource=admin",
+            "mongodb://bigdata:bigdata@localhost:27018/?authSource=admin",
         ),
         local_mongo_db=os.getenv("LOCAL_MONGO_DB", "tripdata_local"),
         atlas_mongo_uri=os.getenv("ATLAS_MONGO_URI", ""),

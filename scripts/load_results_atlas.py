@@ -12,20 +12,34 @@ from bigdata_project.mongo_ops import write_results_to_atlas
 
 def parse_result_line(line: str) -> dict:
     parts = line.strip().split("\t")
-    if len(parts) != 4:
+    if len(parts) not in (4, 6):
         raise ValueError(f"Unexpected reducer line: {line}")
-    metric, dimension, count, duration_sum = parts
+
+    if len(parts) == 4:
+        metric, dimension, count, duration_sum = parts
+        payload = {
+            "metric": metric,
+            "dimension": dimension,
+            "ride_count": int(float(count)),
+            "duration_sum_minutes": float(duration_sum),
+        }
+        payload["average_duration_minutes"] = (
+            payload["duration_sum_minutes"] / payload["ride_count"]
+            if payload["ride_count"]
+            else 0.0
+        )
+        payload["duration_stddev_minutes"] = None
+        return payload
+
+    metric, dimension, count, duration_sum, duration_mean, duration_stddev = parts
     payload = {
         "metric": metric,
         "dimension": dimension,
         "ride_count": int(float(count)),
         "duration_sum_minutes": float(duration_sum),
+        "average_duration_minutes": float(duration_mean),
+        "duration_stddev_minutes": float(duration_stddev),
     }
-    payload["average_duration_minutes"] = (
-        payload["duration_sum_minutes"] / payload["ride_count"]
-        if payload["ride_count"]
-        else 0.0
-    )
     return payload
 
 

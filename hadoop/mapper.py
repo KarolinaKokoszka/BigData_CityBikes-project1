@@ -20,11 +20,9 @@ def main():
             ("rides_by_bike_type", bike),
             ("rides_by_day_of_week", dow),
             ("rides_by_hour", "{}|{}".format(hour.zfill(2), member)),
+            # Keep missing stations under the same metric as pandas verification.
+            ("rides_by_start_station", start_station),
         ]
-        if start_station == "unknown":
-            keys.append(("rides_without_start_station", "all"))
-        else:
-            keys.append(("rides_by_start_station", start_station))
 
         for metric, dimension in keys:
             a = acc["{}|{}".format(metric, dimension)]
