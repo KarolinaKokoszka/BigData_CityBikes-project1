@@ -14,6 +14,12 @@ Odpowiadam za:
 
 Najprosciej mowiac: ja odpowiadam za warstwe big data i za pokazanie wynikow.
 
+## plik bootstrap.py 
+Jest po to, żeby skrypty uruchamiane z folderu scripts mogły importować wspólne moduły projektu, np. konfigurację i logikę ETL.
+
+## plik config.py
+config.py jest centralnym miejscem konfiguracji projektu. Zbiera ścieżki do danych, ustawienia MongoDB i HDFS oraz zmienne z pliku .env, dzięki czemu wszystkie skrypty korzystają z tych samych ustawień.
+
 ## Jak wyglada przeplyw danych w mojej czesci
 Kolejnosc jest taka:
 
@@ -167,6 +173,164 @@ Dashboard pokazuje:
 
 To jest warstwa prezentacyjna, czyli koncowy, czytelny widok wynikow.
 
+## Skad co czyta dane i gdzie co zapisuje
+To jest bardzo praktyczna czesc, bo na konsultacjach czesto pada pytanie nie tylko "co robi skrypt", ale tez "na jakich danych pracuje i co produkuje".
+
+### `scripts/push_to_hdfs.py`
+- czyta dane z lokalnych plikow CSV w `data/raw/csv/`
+- korzysta z tej samej logiki czyszczenia co ETL do MongoDB
+- zapisuje lokalne pliki TSV do `data/processed/`
+- wysyla te pliki do `HDFS` pod sciezki typu `/tripdata/processed/year=2024/month=01/...`
+
+### `bigdata_project/hdfs_ops.py`
+- nie czyta danych biznesowych bezposrednio
+- obsluguje technicznie wysylke plikow do HDFS przez WebHDFS
+- tworzy katalogi i uploaduje gotowe pliki
+
+### `scripts/run_mapreduce.py`
+- czyta dane z `HDFS`, konkretnie z `/tripdata/processed/...`
+- uruchamia job Hadoop Streaming na tych danych
+- wynik reducera najpierw jest w `HDFS` jako output joba
+- potem skrypt sciaga wynik do lokalnego pliku `outputs/mapreduce_results.tsv`
+
+### `hadoop/mapper.py`
+- czyta wiersze TSV przekazane przez Hadoop ze zbioru w HDFS
+- nie zapisuje plikow samodzielnie
+- generuje czesciowe wyniki do dalszego laczenia
+
+### `hadoop/reducer.py`
+- czyta posortowane wyniki z mappera
+- laczy rekordy dla tych samych kluczy
+- zwraca wynik koncowy na standardowe wyjscie joba Hadoop
+
+### `scripts/load_results_atlas.py`
+- czyta lokalny plik `outputs/mapreduce_results.tsv`
+- zamienia wynik na dokumenty
+- zapisuje agregaty do `MongoDB Atlas`
+- dodatkowo zapisuje podglad do `outputs/atlas_results_preview.json`
+
+### `scripts/run_local_analysis.py`
+- czyta wszystkie lokalne CSV z `data/raw/csv/`
+- czysci je ta sama logika co w ETL
+- liczy proste statystyki w Pandas
+- zapisuje wyniki do:
+  - `outputs/monthly_trips.csv`
+  - `outputs/avg_duration_by_member_type.csv`
+  - `outputs/bike_type_share.csv`
+  - `outputs/top_start_stations.csv`
+  - `outputs/analysis_summary.json`
+
+### `scripts/verify_month.py`
+- czyta lokalne CSV dla jednego miesiaca
+- liczy wynik referencyjny w Pandas
+- czyta lokalny wynik Hadoop z `outputs/mapreduce_results.tsv`
+- porownuje obie wersje i pokazuje zgodnosc albo roznice
+
+### `app/dashboard.py`
+- nie czyta danych bezposrednio z HDFS
+- nie czyta danych bezposrednio z MongoDB Atlas
+- czyta lokalne pliki z folderu `outputs/`, przygotowane przez `scripts/run_local_analysis.py`
+- na tej podstawie rysuje wykresy i tabele w Streamlit
+
+Najprostsze zdanie do zapamietania:
+
+"Dashboard czyta lokalne pliki wynikowe z folderu `outputs/`, a Atlas sluzy u nas do przechowywania wynikow analizy w chmurze."
+
+## Prosty slowniczek pojec
+
+### HDFS
+`HDFS` to Hadoop Distributed File System.
+Najprosciej mowiac jest to system plikow dla Hadoopa, czyli miejsce, w ktorym trzymamy dane do duzego przetwarzania.
+
+Po co nam jest?
+
+- bo wymaganie na `5.0` mowi, ze glowny zbior danych ma byc zapisany w HDFS
+- bo Hadoop czyta dane wlasnie z HDFS
+- bo dane sa tam ulozone tak, zeby dalo sie je przetwarzac w stylu big data
+
+### Hadoop
+`Hadoop` to ekosystem do przechowywania i przetwarzania duzych danych.
+W naszym projekcie najwazniejsze sa dwa elementy:
+
+- `HDFS` - czyli przechowywanie danych
+- `MapReduce` - czyli przetwarzanie danych
+
+Czyli w uproszczeniu:
+
+- HDFS przechowuje
+- Hadoop przetwarza
+
+### MapReduce
+`MapReduce` to model przetwarzania danych na duza skale.
+Dziala w dwoch glownych krokach:
+
+- `map` - kazdy rekord jest analizowany osobno i zamieniany na pary klucz-wartosc
+- `reduce` - rekordy z tym samym kluczem sa laczone i agregowane
+
+W naszym projekcie:
+
+- mapper rozbija przejazdy na metryki, na przyklad miesiac, typ klienta czy stacje
+- reducer laczy te dane i liczy wyniki statystyczne
+
+### Mapper
+`Mapper` to pierwsza czesc MapReduce.
+Jego zadanie polega na tym, zeby przeczytac pojedynczy rekord i powiedziec, do jakich analiz on nalezy.
+
+Przyklad:
+
+- jeden przejazd moze trafic jednoczesnie do statystyki miesiecznej,
+- do statystyki po typie klienta,
+- do statystyki po typie roweru,
+- i do statystyki po stacji startowej.
+
+### Reducer
+`Reducer` to druga czesc MapReduce.
+Jego zadanie to zebranie wszystkich rekordow tego samego typu i policzenie wyniku koncowego.
+
+U nas reducer liczy:
+
+- liczbe przejazdow,
+- sume czasow,
+- sredni czas,
+- odchylenie standardowe.
+
+### Hadoop Streaming
+`Hadoop Streaming` to sposob uruchamiania MapReduce w jezykach innych niz Java.
+U nas dzieki temu mozemy napisac `mapper.py` i `reducer.py` w Pythonie, a Hadoop potraktuje je jako elementy joba.
+
+### NameNode
+`NameNode` to glowny wezel HDFS.
+On nie przechowuje calej tresci danych tak jak zwykly magazyn, tylko zarzadza systemem plikow.
+
+Najprosciej mowiac:
+
+- wie, jakie pliki sa w HDFS,
+- wie, gdzie sa zapisane,
+- zarzadza struktura katalogow i metadanymi.
+
+Mozna powiedziec, ze NameNode jest "menedzerem" HDFS.
+
+### DataNode
+`DataNode` to wezel, ktory przechowuje dane.
+Jesli NameNode wie, gdzie co jest, to DataNode faktycznie trzyma bloki plikow.
+
+Najprosciej:
+
+- NameNode zarzadza
+- DataNode przechowuje
+
+### WebHDFS
+`WebHDFS` to HTTP API do komunikacji z HDFS.
+U nas jest uzywane po to, zeby skrypt Pythonowy mogl wrzucac pliki do HDFS bez pisania wszystkiego przez linie komend Hadoop.
+
+### Kontener NameNode i DataNode w projekcie
+W Waszym projekcie oba te elementy sa uruchomione jako kontenery Docker:
+
+- `bigdata-namenode`
+- `bigdata-datanode`
+
+Dzieki temu mozna lokalnie pokazac HDFS i Hadoop bez osobnego klastra na kilku maszynach.
+
 ## Jak moja czesc laczy sie z reszta projektu
 Moja czesc bierze dane po czyszczeniu i robi z nimi dwie rzeczy:
 
@@ -213,3 +377,38 @@ Moja rola polega na tym, zeby oczyszczone dane zapisac w HDFS, przetworzyc je pr
 
 ## Krotkie streszczenie do powiedzenia
 "W naszej czesci projektu odpowiadam za warstwe big data i prezentacje wynikow. Najpierw przygotowujemy oczyszczone dane do formatu TSV i zapisujemy je w HDFS. Potem uruchamiamy Hadoop Streaming z mapperem i reducerem napisanym w Pythonie, zeby policzyc najwazniejsze statystyki, na przyklad liczbe przejazdow, sredni czas czy rozklad po typie klienta i stacji. Wyniki joba zapisujemy do pliku, a potem do MongoDB Atlas jako agregaty. Dodatkowo przygotowujemy lokalne statystyki do dashboardu w Streamlit, zeby latwo pokazac wyniki analizy. Poprawnosc logiki Hadoop sprawdzamy przez porownanie wyniku z obliczeniami referencyjnymi w Pandas dla wybranego miesiaca."
+
+
+### tests/test_manifest.py
+Ten plik testuje logikę związaną z manifestem, czyli etapem scrapingu i wybierania plików.
+
+Sprawdza 2 rzeczy:
+
+1. parse_html_keys()
+- bierze przykładowy fragment HTML
+- sprawdza, czy funkcja wyciąga tylko linki do plików .zip
+- ignoruje inne linki, np. notes.txt
+
+2. filter_monthly_archives()
+- bierze listę nazw plików z różnych lat
+- sprawdza, czy funkcja poprawnie zostawia tylko pliki z wybranego roku, np. 2024
+
+### tests/test_transform.py
+Ten plik testuje czyszczenie danych w normalize_chunk().
+
+Sprawdza 2 rzeczy:
+
+1. Czy złe rekordy są odrzucane i dobre są wzbogacane
+- tworzy 2 przykładowe przejazdy:
+    - jeden poprawny
+    - jeden błędny, gdzie koniec przejazdu jest wcześniej niż początek
+- sprawdza, że zostaje tylko poprawny rekord
+- sprawdza też, czy dobrze policzył się:
+    - trip_duration_minutes
+    - trip_year
+    - source_file
+
+2. Czy odpadają rekordy spoza NYC
+- tworzy 1 rekord z poprawnymi współrzędnymi
+- i 1 rekord z absurdalnymi współrzędnymi
+- sprawdza, że zostaje tylko ten z Nowego Jorku

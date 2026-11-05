@@ -9,6 +9,7 @@ from bigdata_project.config import SETTINGS
 
 
 def _webhdfs_url(path: str, operation: str) -> str:
+    """Buduje adres zapytania WebHDFS"""
     normalized_path = quote(path.lstrip("/"))
     return (
         f"{SETTINGS.webhdfs_url}/webhdfs/v1/{normalized_path}"
@@ -17,6 +18,7 @@ def _webhdfs_url(path: str, operation: str) -> str:
 
 
 def _rewrite_redirect_url(redirect_url: str) -> str:
+    """Podmienia host z Dockera na adres dostępny z komputera"""
     redirect_parts = urlparse(redirect_url)
     external_parts = urlparse(SETTINGS.webhdfs_url)
     netloc = external_parts.hostname or redirect_parts.hostname or "localhost"
@@ -26,6 +28,7 @@ def _rewrite_redirect_url(redirect_url: str) -> str:
 
 
 def ensure_hdfs_dir(path: str) -> None:
+    """Tworzy katalog w HDFS, jeśli nie istnieje."""
     response = requests.put(_webhdfs_url(path, "MKDIRS"), timeout=60)
     if response.status_code == 403 and SETTINGS.hdfs_user != "root":
         raise PermissionError(
@@ -36,10 +39,13 @@ def ensure_hdfs_dir(path: str) -> None:
 
 
 def upload_file_to_hdfs(local_path: Path, hdfs_path: str, overwrite: bool = True) -> None:
+    """Wysyła plik do HDFS"""
+
+    # zapytanie NameNode, gdzie zapisać plik -> zwraca przekierowanie do DataNode
     create_url = (
         f"{_webhdfs_url(hdfs_path, 'CREATE')}"
         f"&overwrite={'true' if overwrite else 'false'}"
-    )
+    ) # overwrite=true - zabezpieczenie przed duplikatami plików
     response = requests.put(create_url, allow_redirects=False, timeout=60)
     if response.status_code == 403 and SETTINGS.hdfs_user != "root":
         raise PermissionError(
@@ -49,6 +55,7 @@ def upload_file_to_hdfs(local_path: Path, hdfs_path: str, overwrite: bool = True
     response.raise_for_status()
     redirect_url = _rewrite_redirect_url(response.headers["Location"])
 
+    # wysyłanie zawartość pliku do DataNode
     with local_path.open("rb") as file_handle:
         upload_response = requests.put(redirect_url, data=file_handle, timeout=300)
     upload_response.raise_for_status()

@@ -11,8 +11,9 @@ from bigdata_project.mongo_ops import write_results_to_atlas
 
 
 def parse_result_line(line: str) -> dict:
-    parts = line.strip().split("\t")
-    if len(parts) not in (4, 6):
+    parts = line.strip().split("\t") # zamiana lini wyniku z reducera na słownik 
+
+    if len(parts) not in (4, 6): # 4 kolumny (suma cząstkowa) lub 6 kolumn (wynik końcowy)
         raise ValueError(f"Unexpected reducer line: {line}")
 
     if len(parts) == 4:
@@ -44,15 +45,18 @@ def parse_result_line(line: str) -> dict:
 
 
 def main() -> None:
-    result_file = SETTINGS.outputs_dir / "mapreduce_results.tsv"
+    result_file = SETTINGS.outputs_dir / "mapreduce_results.tsv" # wyniki Hadoopa przygotowane przez mapreduce
     if not result_file.exists():
         raise FileNotFoundError(
             "Reducer output was not found. Save it first as outputs/mapreduce_results.tsv."
         )
 
+    # wczytanie i zamiana każdej linii na słownik
     results = [parse_result_line(line) for line in result_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # zapis do MongoDB Atlas
     stored = write_results_to_atlas(results)
 
+    # lokalny podgląd
     json_output = SETTINGS.outputs_dir / "atlas_results_preview.json"
     json_output.write_text(json.dumps(results[:50], indent=2), encoding="utf-8")
     print(f"Stored {stored} result documents in MongoDB Atlas.")

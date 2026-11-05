@@ -17,7 +17,7 @@ COUNTERS = ("Map input records", "Map output records", "Reduce input groups", "R
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the Hadoop Streaming job and export results.")
-    parser.add_argument("--subdir", help="Only part of the data, e.g. year=2025/month=01")
+    parser.add_argument("--subdir", help="Only part of the data, e.g. year=2024/month=01")
     parser.add_argument("--output", default="/tripdata/output_stats", help="HDFS output directory")
     return parser.parse_args()
 
@@ -34,15 +34,18 @@ def main():
     hadoop_dir = SETTINGS.project_root / "hadoop"
     SETTINGS.outputs_dir.mkdir(parents=True, exist_ok=True)
 
+    # skopiowanie mapper.py i reducer.py do kontenera NameNode
     for name in ("mapper.py", "reducer.py"):
         subprocess.run(
             ["docker", "cp", str(hadoop_dir / name), "{}:/tmp/{}".format(CONTAINER, name)],
             check=True,
         )
+
     if docker_exec("python3 --version").returncode != 0:
         sys.exit("No python3 in the namenode container. Install it first (see README).")
 
     input_path = SETTINGS.hdfs_processed_dir + ("/" + args.subdir if args.subdir else "")
+    # komenda dla Hadoop Streaming
     command = (
         "mkdir -p /tmp/mrwork && cd /tmp/mrwork && rm -f mapper.py reducer.py; "
         "hdfs dfs -rm -r -f {out}; hadoop jar {jar} "
@@ -55,12 +58,14 @@ def main():
     log_path = SETTINGS.outputs_dir / "mapreduce_job.log"
     counters = {}
     start = time.time()
+    # uruchomienie joba 
     with log_path.open("w", encoding="utf-8") as log:
         proc = subprocess.Popen(
             ["docker", "exec", CONTAINER, "bash", "-c", command],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
         )
+
         for line in proc.stdout:
             log.write(line)
             if "mapreduce.Job:" in line and " map " in line:
@@ -80,7 +85,10 @@ def main():
         if name in counters:
             print("{}: {}".format(name, counters[name][-1]))
 
+    # scalenie plików wynikowych z HDFS w jeden plik w kontenerze
     docker_exec("hdfs dfs -getmerge {} /tmp/mapreduce_results.tsv".format(args.output))
+
+    #pobieranie wynik z HDFS do lokalnego pliku outputs/mapreduce_results.tsv
     target = SETTINGS.outputs_dir / "mapreduce_results.tsv"
     subprocess.run(
         ["docker", "cp", "{}:/tmp/mapreduce_results.tsv".format(CONTAINER), str(target)],

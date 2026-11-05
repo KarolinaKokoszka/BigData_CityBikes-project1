@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from bigdata_project.config import SETTINGS
 
 st.set_page_config(page_title="Citi Bike Analytics", layout="wide")
-st.title("Citi Bike 2024-2025 Analytics")
-st.caption("Dashboard oparty o lokalne wyniki analiz i dane przygotowane do MongoDB Atlas.")
+st.title("Citi Bike Analytics")
+st.caption("Dashboard oparty o lokalne wyniki analiz.")
 
 
 def read_csv_if_exists(path: Path) -> pd.DataFrame | None:
@@ -33,6 +33,7 @@ if monthly is None:
 left, right = st.columns(2)
 
 with left:
+    # wykres 1: liczba przejazdów w kolejnych miesiącach
     st.subheader("Liczba przejazdow per miesiac")
     monthly["period"] = (
         monthly["trip_year"].astype(str)
@@ -42,6 +43,7 @@ with left:
     st.line_chart(monthly.set_index("period")["ride_count"])
 
 with right:
+    # wykres 2: średni czas przejazdu dla każdego typu klienta
     st.subheader("Sredni czas przejazdu per typ klienta (w minutach)")
     if avg_duration is not None:
         avg_duration.columns = ["member_casual", "trip_duration_minutes"]
@@ -50,12 +52,14 @@ with right:
 lower_left, lower_right = st.columns(2)
 
 with lower_left:
+    # wykres 3: liczba przejazdów wg typu roweru
     st.subheader("Udzial typow rowerow")
     if bike_share is not None:
         bike_share.columns = ["rideable_type", "ride_count"]
         st.bar_chart(bike_share.set_index("rideable_type")["ride_count"])
 
 with lower_right:
+    # Tabela z 10 najpopularniejszymi stacjami startowymi
     st.subheader("Top stacje startowe")
     if top_stations is not None:
         top_stations.columns = ["start_station_name", "ride_count"]

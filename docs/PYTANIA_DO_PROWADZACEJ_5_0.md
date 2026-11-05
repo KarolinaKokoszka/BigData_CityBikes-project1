@@ -66,13 +66,32 @@ Mozna zapytac:
 
 "Czy lokalna baza MongoDB powinna zawierac caly oczyszczony zbior, czy wystarczy, ze sluzy jako etap ETL i magazyn danych do testow oraz wstepnych analiz?"
 
+### 8. Czy nasz sposob pozyskania listy plikow mozna uznac za web scraping?
+To jest punkt, o ktory warto dopytac formalnie, bo u Was scraping nie polega na sciaganiu tresci artykulow czy rekordow ze strony, tylko na parsowaniu strony z linkami do plikow.
+
+U Was to wyglada tak:
+
+- skrypt pobiera strone lub listing z `tripdata`,
+- odczytuje z HTML albo XML linki do archiwow `.zip`,
+- filtruje tylko pliki miesieczne z interesujacego zakresu,
+- buduje manifest, czyli liste plikow do dalszego pobrania,
+- a same dane sa potem sciagane juz jako otwarte archiwa ZIP.
+
+Czyli technicznie jest to scraping strony z linkami do danych, a nie reczne wpisanie adresow plikow.
+Jednoczesnie prowadzaca moze uznac, ze to jest bardziej "parsowanie listingu i pobieranie otwartego zbioru" niz klasyczny scraping tresci strony.
+
+Najlepiej zapytac to tak:
+
+"W naszym projekcie web scraping polega na pobraniu strony lub listingu `tripdata`, sparsowaniu HTML albo XML, wyciagnieciu linkow do miesiecznych archiwow ZIP i zbudowaniu manifestu plikow do pobrania. Czy taki sposob mozemy potraktowac jako web scraping w rozumieniu wymagan projektu?"
+
 ## Najbardziej praktyczna wersja: o co zapytac na pewno
-Jesli nie chcecie pytac o wszystko, to ja bym koniecznie zadal te 4 pytania:
+Jesli nie chcecie pytac o wszystko, to ja bym koniecznie zadal te 5 pytan:
 
 1. Czy lokalne MongoDB bez TLS jest akceptowalne, jesli Atlas ma TLS i uwierzytelnienie?
 2. Czy dane zapisane w HDFS po czyszczeniu nadal spelniaja wymog "glownego zbioru danych w HDFS"?
 3. Czy Atlas moze przechowywac tylko agregaty i wyniki, a nie caly dataset?
 4. Czy dashboard moze czytac lokalne wyniki, jesli Atlas tez zawiera wyniki analizy?
+5. Czy parsowanie strony z linkami do archiwow i budowa manifestu mozna uznac za web scraping?
 
 ## Jak to ujac jednym zdaniem na konsultacji
 Mozecie powiedziec na poczatku tak:
@@ -80,13 +99,14 @@ Mozecie powiedziec na poczatku tak:
 "Technicznie projekt juz dziala end-to-end i spelnia zalozenia ETL, HDFS, Hadoop Streaming, MongoDB Atlas i dashboardu. Chcialybysmy tylko doprecyzowac kilka formalnych kwestii do 5.0, glownie czy lokalne MongoDB musi miec TLS oraz czy Atlas moze przechowywac agregaty zamiast calego zbioru."
 
 ## Moja ocena ryzyka
-Najwieksze ryzyko formalne widze tylko w jednym miejscu:
+Najwieksze ryzyko formalne widze w dwoch miejscach:
 
 - lokalne MongoDB bez TLS
+- to, czy prowadzaca uzna Wasz sposob parsowania listingu plikow za web scraping
 
 Reszta wyglada bardzo sensownie pod wymagania `5.0`, bo:
 
-- web scraping jest,
+- web scraping technicznie jest, ale dobrze go doprecyzowac formalnie,
 - lokalny MongoDB jest,
 - ponowne uruchomienie bez duplikacji jest,
 - HDFS jest,
