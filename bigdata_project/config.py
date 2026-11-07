@@ -30,6 +30,7 @@ class Settings:
     hdfs_user: str
     hdfs_raw_dir: str
     hdfs_processed_dir: str
+    hdfs_mapreduce_input_dir: str
 
 
 def _parse_years(raw_value: str) -> tuple[int, ...]:
@@ -72,6 +73,10 @@ def get_settings() -> Settings:
         hdfs_user=os.getenv("HDFS_USER", "root"),
         hdfs_raw_dir=os.getenv("HDFS_RAW_DIR", "/tripdata/raw"),
         hdfs_processed_dir=os.getenv("HDFS_PROCESSED_DIR", "/tripdata/processed"),
+        hdfs_mapreduce_input_dir=os.getenv(
+            "HDFS_MAPREDUCE_INPUT_DIR",
+            "/tripdata/processed_tmp",
+        ),
     )
 
 

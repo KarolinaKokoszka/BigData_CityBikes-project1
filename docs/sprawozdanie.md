@@ -4,18 +4,19 @@
 Projekt analizuje przejazdy Citi Bike z lat 2024-2025. Celem jest zbudowanie kompletnego pipeline'u do pobierania, czyszczenia, zapisu, przetwarzania i prezentacji danych z wykorzystaniem lokalnego MongoDB, MongoDB Atlas, HDFS oraz Hadoop Streaming.
 
 ## 2. Opis problemu i danych
-- zrodlo danych: oficjalny zbior Citi Bike oraz indeks S3 `tripdata`,
+- zrodlo danych: oficjalna strona `https://citibikenyc.com/system-data` oraz listing `tripdata` w S3,
 - zakres: miesiace `2024-01` do `2025-12`,
 - format: archiwa `.zip` zawierajace pliki `.csv`,
 - glowne pola: `ride_id`, `rideable_type`, `started_at`, `ended_at`, `start_station_name`, `end_station_name`, `member_casual`.
 
 ## 3. Architektura rozwiazania
 Wklej opis przeplywu danych:
-- scraping listy plikow,
+- scraping strony `system-data` i budowa manifestu,
 - pobieranie archiwow,
 - staging i czyszczenie,
 - zapis do MongoDB lokalnego,
-- zapis przetworzonych plikow TSV do HDFS,
+- zapis archiwow ZIP do HDFS,
+- przygotowanie tymczasowego wejscia TSV do Hadoop Streaming,
 - analiza w Hadoop Streaming,
 - zapis agregatow do MongoDB Atlas,
 - wizualizacja w Streamlit.
@@ -38,7 +39,8 @@ Wstaw wyniki i interpretacje:
 
 ## 6. Hadoop i HDFS
 Opisz:
-- format danych wrzucanych do HDFS,
+- format danych wrzucanych do HDFS jako zbior glowny,
+- format tymczasowego wejscia do Hadoop Streaming,
 - logike `mapper.py` i `reducer.py`,
 - sposob uruchamiania Hadoop Streaming,
 - gdzie trafiaja wyniki.
@@ -56,10 +58,11 @@ Wstaw kroki z README:
 3. wygenerowanie manifestu,
 4. pobranie i staging,
 5. import do MongoDB lokalnego,
-6. export TSV do HDFS,
-7. uruchomienie MapReduce,
-8. zapis wynikow do Atlas,
-9. start dashboardu.
+6. upload ZIP do HDFS,
+7. przygotowanie tymczasowego TSV do MapReduce,
+8. uruchomienie MapReduce,
+9. zapis wynikow do Atlas,
+10. start dashboardu.
 
 ## 9. Wnioski
 Podsumuj:

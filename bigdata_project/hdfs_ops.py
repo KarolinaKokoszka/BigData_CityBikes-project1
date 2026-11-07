@@ -59,3 +59,20 @@ def upload_file_to_hdfs(local_path: Path, hdfs_path: str, overwrite: bool = True
     with local_path.open("rb") as file_handle:
         upload_response = requests.put(redirect_url, data=file_handle, timeout=300)
     upload_response.raise_for_status()
+
+
+def download_file_from_hdfs(hdfs_path: str, local_path: Path) -> Path:
+    """Pobiera plik z HDFS przez WebHDFS."""
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    open_url = _webhdfs_url(hdfs_path, "OPEN")
+    response = requests.get(open_url, allow_redirects=False, timeout=60)
+    response.raise_for_status()
+    redirect_url = _rewrite_redirect_url(response.headers["Location"])
+
+    with requests.get(redirect_url, stream=True, timeout=300) as download_response:
+        download_response.raise_for_status()
+        with local_path.open("wb") as file_handle:
+            for chunk in download_response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    file_handle.write(chunk)
+    return local_path

@@ -6,12 +6,14 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 from bigdata_project.config import SETTINGS
 
+SYSTEM_DATA_URL = "https://citibikenyc.com/system-data"
 HTML_INDEX_URL = "https://s3.amazonaws.com/tripdata/index.html"
 XML_INDEX_URL = "https://s3.amazonaws.com/tripdata?list-type=2"
 DOWNLOAD_BASE_URL = "https://s3.amazonaws.com/tripdata/"
@@ -51,6 +53,20 @@ def fetch_html_index(session: requests.Session | None = None) -> str:
     return response.text
 
 
+def fetch_system_data_page(session: requests.Session | None = None) -> str:
+    session = session or requests.Session()
+    response = session.get(SYSTEM_DATA_URL, timeout=60)
+    response.raise_for_status()
+    return response.text
+
+
+def fetch_text(url: str, session: requests.Session | None = None) -> str:
+    session = session or requests.Session()
+    response = session.get(url, timeout=60)
+    response.raise_for_status()
+    return response.text
+
+
 def fetch_xml_index(session: requests.Session | None = None) -> str:
     session = session or requests.Session()
     response = session.get(XML_INDEX_URL, timeout=60)
@@ -66,6 +82,64 @@ def parse_html_keys(html: str) -> list[str]:
         if href.endswith(".zip"):
             keys.append(Path(href).name)
     return keys
+
+
+def parse_system_data_listing_urls(html: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    listing_urls: list[str] = []
+    for anchor in soup.select("a[href]"):
+        href = anchor.get("href", "").strip()
+        if not href:
+            continue
+        absolute_url = urljoin(SYSTEM_DATA_URL, href)
+        if "s3.amazonaws.com/tripdata" not in absolute_url:
+            continue
+        if absolute_url.endswith(".zip"):
+            continue
+        if absolute_url.endswith("index.html") or "list-type=2" in absolute_url:
+            if absolute_url not in listing_urls:
+                listing_urls.append(absolute_url)
+    return listing_urls
+
+
+def parse_system_data_page_details(html: str) -> dict:
+    soup = BeautifulSoup(html, "html.parser")
+
+    page_title = ""
+    title_node = soup.find("h1")
+    if title_node:
+        page_title = title_node.get_text(" ", strip=True)
+    if not page_title:
+        title_meta = soup.find("meta", attrs={"property": "og:title"})
+        if title_meta:
+            page_title = title_meta.get("content", "").strip()
+
+    page_description = ""
+    description_node = soup.find("meta", attrs={"name": "description"})
+    if description_node:
+        page_description = description_node.get("content", "").strip()
+
+    section_title = ""
+    field_names: list[str] = []
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        heading_text = heading.get_text(" ", strip=True)
+        if "Citi Bike Trip Histories" not in heading_text:
+            continue
+        section_title = heading_text
+        field_list = heading.find_next("ul")
+        if field_list:
+            for item in field_list.find_all("li"):
+                text = item.get_text(" ", strip=True)
+                if text:
+                    field_names.append(text)
+        break
+
+    return {
+        "page_title": page_title,
+        "page_description": page_description,
+        "trip_history_section_title": section_title,
+        "trip_history_fields": field_names,
+    }
 
 
 def parse_xml_entries(xml_text: str) -> list[dict[str, str]]:
@@ -91,6 +165,7 @@ def parse_xml_entries(xml_text: str) -> list[dict[str, str]]:
 def filter_monthly_archives(
     keys: Iterable[str],
     years: tuple[int, ...] | None = None,
+    source_type: str = "html",
 ) -> list[ManifestEntry]:
     allowed_years = set(years or SETTINGS.years)
     entries: list[ManifestEntry] = []
@@ -111,7 +186,7 @@ def filter_monthly_archives(
                 url=f"{DOWNLOAD_BASE_URL}{key}",
                 size_bytes=None,
                 last_modified=None,
-                source_type="html",
+                source_type=source_type,
             )
         )
 
@@ -138,19 +213,40 @@ def select_entries(
     return filtered
 
 
-def build_manifest(
-    years: tuple[int, ...] | None = None,
-    session: requests.Session | None = None,
-) -> list[ManifestEntry]:
+def build_scrape_report(
+    page_details: dict,
+    listing_urls: list[str],
+    selected_listing_url: str | None,
+    years: tuple[int, ...],
+    entry_count: int,
+    source_type: str,
+) -> dict:
+    return {
+        "page_url": SYSTEM_DATA_URL,
+        "page_title": page_details.get("page_title", ""),
+        "page_description": page_details.get("page_description", ""),
+        "trip_history_section_title": page_details.get("trip_history_section_title", ""),
+        "trip_history_fields": page_details.get("trip_history_fields", []),
+        "listing_urls": listing_urls,
+        "listing_url_count": len(listing_urls),
+        "selected_listing_url": selected_listing_url,
+        "years": list(years),
+        "manifest_entry_count": entry_count,
+        "manifest_source": source_type,
+    }
+
+
+def save_scrape_report(report: dict, output_path: Path | None = None) -> Path:
     ensure_directories()
-    session = session or requests.Session()
+    output_path = output_path or (SETTINGS.outputs_dir / "system_data_scrape.json")
+    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return output_path
 
-    html_keys = parse_html_keys(fetch_html_index(session))
-    html_entries = filter_monthly_archives(html_keys, years=years)
-    if html_entries:
-        return html_entries
 
-    xml_records = parse_xml_entries(fetch_xml_index(session))
+def _build_entries_from_xml_records(
+    xml_records: list[dict[str, str]],
+    years: tuple[int, ...] | None = None,
+) -> list[ManifestEntry]:
     allowed_years = set(years or SETTINGS.years)
     entries: list[ManifestEntry] = []
     for record in xml_records:
@@ -174,6 +270,75 @@ def build_manifest(
             )
         )
     return sorted(entries, key=lambda item: (item.year, item.month, item.file_name))
+
+
+def build_manifest_bundle(
+    years: tuple[int, ...] | None = None,
+    session: requests.Session | None = None,
+) -> tuple[list[ManifestEntry], dict]:
+    ensure_directories()
+    session = session or requests.Session()
+    selected_years = years or SETTINGS.years
+
+    system_data_html = fetch_system_data_page(session)
+    page_details = parse_system_data_page_details(system_data_html)
+    listing_urls = parse_system_data_listing_urls(system_data_html)
+
+    for listing_url in listing_urls:
+        listing_html = fetch_text(listing_url, session)
+        html_entries = filter_monthly_archives(
+            parse_html_keys(listing_html),
+            years=selected_years,
+            source_type="system-data-html",
+        )
+        if html_entries:
+            report = build_scrape_report(
+                page_details=page_details,
+                listing_urls=listing_urls,
+                selected_listing_url=listing_url,
+                years=selected_years,
+                entry_count=len(html_entries),
+                source_type="system-data-html",
+            )
+            return html_entries, report
+
+    html_entries = filter_monthly_archives(
+        parse_html_keys(fetch_html_index(session)),
+        years=selected_years,
+        source_type="s3-html-fallback",
+    )
+    if html_entries:
+        report = build_scrape_report(
+            page_details=page_details,
+            listing_urls=listing_urls,
+            selected_listing_url=HTML_INDEX_URL,
+            years=selected_years,
+            entry_count=len(html_entries),
+            source_type="s3-html-fallback",
+        )
+        return html_entries, report
+
+    xml_entries = _build_entries_from_xml_records(
+        parse_xml_entries(fetch_xml_index(session)),
+        years=selected_years,
+    )
+    report = build_scrape_report(
+        page_details=page_details,
+        listing_urls=listing_urls,
+        selected_listing_url=XML_INDEX_URL,
+        years=selected_years,
+        entry_count=len(xml_entries),
+        source_type="xml-fallback",
+    )
+    return xml_entries, report
+
+
+def build_manifest(
+    years: tuple[int, ...] | None = None,
+    session: requests.Session | None = None,
+) -> list[ManifestEntry]:
+    entries, _report = build_manifest_bundle(years=years, session=session)
+    return entries
 
 
 def save_manifest(

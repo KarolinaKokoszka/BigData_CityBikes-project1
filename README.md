@@ -1,10 +1,11 @@
 # Big Data Project 1: Citi Bike 2024-2025
 
 Projekt realizuje kompletny pipeline dla danych Citi Bike z lat 2024-2025:
-- pobieranie listy miesiecznych archiwow ze zrodla `tripdata`,
+- scraping strony `https://citibikenyc.com/system-data` i budowe manifestu archiwow,
 - staging i czyszczenie danych w Pythonie,
 - idempotentny import do lokalnego MongoDB,
-- przygotowanie danych TSV do HDFS,
+- zapis glownych archiwow ZIP do HDFS,
+- przygotowanie tymczasowego wejscia TSV pod Hadoop Streaming,
 - analize statystyczna w Hadoop Streaming,
 - zapis wynikow do MongoDB Atlas,
 - prezentacje wynikow w `Streamlit`.
@@ -64,6 +65,10 @@ Mozecie tez zawezic zakres:
 python scripts/scrape_tripdata.py --years 2024
 ```
 
+Skrypt zapisuje:
+- manifest do `data/manifests/`
+- raport scrapingu strony `system-data` do `outputs/system_data_scrape.json`
+
 ### 2. Pobranie i rozpakowanie danych
 ```powershell
 python scripts/download_and_stage.py
@@ -89,7 +94,7 @@ Import jest idempotentny:
 - rekordy w `tripdata_cleaned_local` maja `_id = ride_id::source_file`,
 - ponowne uruchomienie nie powinno duplikowac danych.
 
-### 4. Przygotowanie danych pod Hadoop i upload do HDFS
+### 4. Upload archiwow ZIP do HDFS
 ```powershell
 python scripts/push_to_hdfs.py
 ```
@@ -100,32 +105,45 @@ python scripts/push_to_hdfs.py --year 2024 --month 1 --limit 1
 ```
 
 Skrypt:
-- czyta lokalne CSV,
-- normalizuje pola,
-- zapisuje TSV do `data/processed/`,
-- wrzuca wynik do `HDFS` przez `WebHDFS`.
+- czyta pobrane archiwa z `data/raw/zip/`,
+- wrzuca je do `HDFS` przez `WebHDFS`,
+- zapisuje je jako glowny zbior danych w `HDFS`.
 
-### 5. Hadoop Streaming
-Przykladowe uruchomienie nalezy wykonac w kontenerze z Hadoop CLI lub w srodowisku z dostepem do `hadoop`:
-
-```bash
-hadoop jar /opt/hadoop/share/hadoop/tools/lib/hadoop-streaming-*.jar \
-  -input /tripdata/processed \
-  -output /tripdata/output_stats \
-  -mapper "python3 mapper.py" \
-  -reducer "python3 reducer.py" \
-  -file hadoop/mapper.py \
-  -file hadoop/reducer.py
+### 5. Przygotowanie tymczasowego wejscia do MapReduce
+```powershell
+python scripts/prepare_mapreduce_input.py
 ```
 
-Po zakonczeniu zapisz wynik do lokalnego pliku `outputs/mapreduce_results.tsv`.
+Do testu:
+```powershell
+python scripts/prepare_mapreduce_input.py --year 2024 --month 1 --limit 1
+```
 
-### 6. Zapis wynikow do MongoDB Atlas
+Skrypt:
+- pobiera ZIP-y z `HDFS/raw`,
+- rozpakowuje je roboczo,
+- normalizuje dane tym sama logika czyszczenia,
+- zapisuje lokalne `TSV` do `data/processed/`,
+- wrzuca robocze wejscie do `HDFS` pod `processed_tmp`.
+
+### 6. Hadoop Streaming
+```powershell
+python scripts/run_mapreduce.py
+```
+
+Do testu jednego miesiaca:
+```powershell
+python scripts/run_mapreduce.py --subdir year=2024/month=01
+```
+
+Po zakonczeniu wynik trafia do lokalnego pliku `outputs/mapreduce_results.tsv`.
+
+### 7. Zapis wynikow do MongoDB Atlas
 ```powershell
 python scripts/load_results_atlas.py
 ```
 
-### 7. Wizualizacja
+### 8. Wizualizacja
 ```powershell
 streamlit run app/dashboard.py
 ```
@@ -139,6 +157,7 @@ streamlit run app/dashboard.py
 - Docker i uruchomienie baz
 
 ### Osoba B
+- `prepare_mapreduce_input.py`
 - `mapper.py`
 - `reducer.py`
 - `load_results_atlas.py`

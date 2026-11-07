@@ -16,7 +16,7 @@ Najprosciej mowiac: ja odpowiadam za to, zeby surowe dane zamienily sie w uporza
 ## Jak wyglada przeplyw danych w mojej czesci
 Kolejnosc jest taka:
 
-1. `scripts/scrape_tripdata.py` pobiera liste miesiecznych archiwow ze strony z danymi Citi Bike.
+1. `scripts/scrape_tripdata.py` scrapuje strone `https://citibikenyc.com/system-data` i buduje manifest archiwow do pobrania.
 2. `bigdata_project/manifest.py` buduje manifest, czyli uporzadkowana liste plikow do pobrania.
 3. `scripts/download_and_stage.py` korzysta z manifestu, pobiera archiwa `.zip` i rozpakowuje je do plikow `.csv`.
 4. `bigdata_project/download.py` obsluguje samo pobieranie, wznowienie po bledzie, sprawdzanie archiwum i rozpakowanie.
@@ -31,6 +31,8 @@ To jest skrypt startowy do zbudowania listy danych.
 Jego rola jest prosta:
 
 - bierze wybrane lata, na przyklad `2024,2025`,
+- scrapuje oficjalna strone `system-data`,
+- zapisuje raport z tego scrapingu do `outputs/system_data_scrape.json`,
 - uruchamia budowanie manifestu,
 - zapisuje wynik do pliku JSON.
 
@@ -40,8 +42,9 @@ Czyli to nie pobiera jeszcze samych danych, tylko najpierw tworzy plan: jakie pl
 To jest logika odpowiedzialna za manifest.
 Ten plik:
 
-- laczy sie ze strona `tripdata`,
-- odczytuje nazwy archiwow `.zip`,
+- laczy sie ze strona `system-data` i wyciaga z niej link do danych trip history,
+- korzysta z tego jako jawnego etapu scrapingu,
+- dopiero potem odczytuje liste archiwow `.zip`,
 - odfiltrowuje tylko miesieczne pliki Citi Bike,
 - zapisuje dla nich informacje takie jak rok, miesiac i URL,
 - tworzy plik manifestu w JSON.

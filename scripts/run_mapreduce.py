@@ -16,7 +16,9 @@ COUNTERS = ("Map input records", "Map output records", "Reduce input groups", "R
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run the Hadoop Streaming job and export results.")
+    parser = argparse.ArgumentParser(
+        description="Run the Hadoop Streaming job on prepared temporary TSV input and export results."
+    )
     parser.add_argument("--subdir", help="Only part of the data, e.g. year=2024/month=01")
     parser.add_argument("--output", default="/tripdata/output_stats", help="HDFS output directory")
     return parser.parse_args()
@@ -44,7 +46,7 @@ def main():
     if docker_exec("python3 --version").returncode != 0:
         sys.exit("No python3 in the namenode container. Install it first (see README).")
 
-    input_path = SETTINGS.hdfs_processed_dir + ("/" + args.subdir if args.subdir else "")
+    input_path = SETTINGS.hdfs_mapreduce_input_dir + ("/" + args.subdir if args.subdir else "")
     # komenda dla Hadoop Streaming
     command = (
         "mkdir -p /tmp/mrwork && cd /tmp/mrwork && rm -f mapper.py reducer.py; "

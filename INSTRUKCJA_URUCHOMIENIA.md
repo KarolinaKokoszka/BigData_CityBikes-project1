@@ -34,12 +34,15 @@ python scripts/download_and_stage.py --year 2024 --month 1 --limit 1
 python scripts/load_local_mongo.py --year 2024 --month 1 --limit 1
 python scripts/run_local_analysis.py
 python scripts/push_to_hdfs.py --year 2024 --month 1 --limit 1
+python scripts/prepare_mapreduce_input.py --year 2024 --month 1 --limit 1
+python scripts/run_mapreduce.py --subdir year=2024/month=01
 ```
 
 ## 5. Sprawdzenie HDFS
 
 ```powershell
-docker exec -it bigdata-namenode hdfs dfs -ls /tripdata/processed/year=2024/month=01
+docker exec -it bigdata-namenode hdfs dfs -ls /tripdata/raw/year=2024/month=01
+docker exec -it bigdata-namenode hdfs dfs -ls /tripdata/processed_tmp/year=2024/month=01
 ```
 
 ## 6. Uwaga

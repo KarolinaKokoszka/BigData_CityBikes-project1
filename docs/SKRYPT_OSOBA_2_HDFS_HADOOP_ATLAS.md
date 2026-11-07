@@ -23,31 +23,42 @@ config.py jest centralnym miejscem konfiguracji projektu. Zbiera ścieżki do da
 ## Jak wyglada przeplyw danych w mojej czesci
 Kolejnosc jest taka:
 
-1. `scripts/push_to_hdfs.py` bierze lokalne CSV i przygotowuje pliki TSV pod Hadoop.
-2. `bigdata_project/hdfs_ops.py` wrzuca te pliki do HDFS przez WebHDFS.
+1. `scripts/push_to_hdfs.py` wrzuca pobrane archiwa ZIP do HDFS jako glowny zbior danych.
+2. `bigdata_project/hdfs_ops.py` wrzuca archiwa ZIP i pliki robocze do HDFS przez WebHDFS.
 3. `docker-compose.yml` uruchamia lokalne srodowisko z NameNode, DataNode i MongoDB.
 4. `docker/hadoop-python/Dockerfile` dodaje `python3` do kontenerow Hadoop, zeby dzialal Streaming w Pythonie.
-5. `scripts/run_mapreduce.py` uruchamia job Hadoop Streaming.
-6. `hadoop/mapper.py` zamienia kazdy przejazd na pary klucz-wartosc do analiz.
-7. `hadoop/reducer.py` laczy wyniki i liczy agregaty koncowe.
-8. `scripts/load_results_atlas.py` zapisuje wyniki do MongoDB Atlas.
-9. `scripts/run_local_analysis.py` tworzy proste lokalne statystyki do dashboardu.
-10. `scripts/verify_month.py` porownuje wynik Hadoop z wynikiem referencyjnym z Pandas dla jednego miesiaca.
-11. `app/dashboard.py` pokazuje wykresy i tabele.
+5. `scripts/prepare_mapreduce_input.py` przygotowuje tymczasowe wejscie TSV do Hadoop Streaming.
+6. `scripts/run_mapreduce.py` uruchamia job Hadoop Streaming.
+7. `hadoop/mapper.py` zamienia kazdy przejazd na pary klucz-wartosc do analiz.
+8. `hadoop/reducer.py` laczy wyniki i liczy agregaty koncowe.
+9. `scripts/load_results_atlas.py` zapisuje wyniki do MongoDB Atlas.
+10. `scripts/run_local_analysis.py` tworzy proste lokalne statystyki do dashboardu.
+11. `scripts/verify_month.py` porownuje wynik Hadoop z wynikiem referencyjnym z Pandas dla jednego miesiaca.
+12. `app/dashboard.py` pokazuje wykresy i tabele.
 
 ## Co mowie o kazdym pliku
 
 ### `scripts/push_to_hdfs.py`
-Ten skrypt przygotowuje dane pod Hadoop.
+Ten skrypt odpowiada za glowny zbior danych w HDFS.
 On:
 
-- czyta surowe lokalne CSV,
-- przepuszcza je przez te sama logike czyszczenia co import do MongoDB,
-- wybiera tylko kolumny potrzebne do analiz,
-- zapisuje wynik jako pliki TSV,
-- wrzuca te pliki do HDFS.
+- czyta pobrane archiwa z `data/raw/zip/`,
+- wrzuca te archiwa do HDFS,
+- zapisuje je w katalogu `raw`.
 
-Wazne jest to, ze dane do HDFS nie sa surowe, tylko juz oczyszczone i ujednolicone.
+Wazne jest to, ze po poprawce glowny zbior w HDFS to archiwa ZIP, zgodnie z uwaga prowadzacego.
+
+### `scripts/prepare_mapreduce_input.py`
+To jest dodatkowy etap roboczy przed Hadoop Streaming.
+On:
+
+- pobiera ZIP-y z `HDFS/raw`,
+- rozpakowuje je roboczo,
+- stosuje te sama logike czyszczenia co ETL,
+- przygotowuje pliki TSV tylko pod uruchomienie joba,
+- wrzuca je do tymczasowej sciezki w HDFS, czyli `processed_tmp`.
+
+To jest wazne, bo Hadoop Streaming potrzebuje wygodnego wejscia tekstowego, ale nie traktujemy juz tych TSV jako glownego zbioru w HDFS.
 
 ### `bigdata_project/hdfs_ops.py`
 To jest warstwa komunikacji z HDFS przez WebHDFS.
@@ -93,7 +104,7 @@ On:
 - kopiuje `mapper.py` i `reducer.py` do kontenera NameNode,
 - sprawdza, czy w kontenerze jest `python3`,
 - buduje komende Hadoop Streaming,
-- uruchamia job na danych z HDFS,
+- uruchamia job na danych z tymczasowej sciezki `processed_tmp` w HDFS,
 - zbiera logi i podstawowe liczniki joba,
 - pobiera wynik z HDFS do lokalnego pliku `outputs/mapreduce_results.tsv`.
 
@@ -177,18 +188,22 @@ To jest warstwa prezentacyjna, czyli koncowy, czytelny widok wynikow.
 To jest bardzo praktyczna czesc, bo na konsultacjach czesto pada pytanie nie tylko "co robi skrypt", ale tez "na jakich danych pracuje i co produkuje".
 
 ### `scripts/push_to_hdfs.py`
-- czyta dane z lokalnych plikow CSV w `data/raw/csv/`
-- korzysta z tej samej logiki czyszczenia co ETL do MongoDB
-- zapisuje lokalne pliki TSV do `data/processed/`
-- wysyla te pliki do `HDFS` pod sciezki typu `/tripdata/processed/year=2024/month=01/...`
+- czyta archiwa z `data/raw/zip/`
+- wysyla je do `HDFS` pod sciezki typu `/tripdata/raw/year=2024/month=01/...zip`
 
 ### `bigdata_project/hdfs_ops.py`
 - nie czyta danych biznesowych bezposrednio
 - obsluguje technicznie wysylke plikow do HDFS przez WebHDFS
 - tworzy katalogi i uploaduje gotowe pliki
 
+### `scripts/prepare_mapreduce_input.py`
+- czyta ZIP-y z `HDFS/raw`
+- rozpakowuje je roboczo i czysci
+- przygotowuje lokalne pliki TSV w `data/processed/`
+- wysyla te pliki do `HDFS` pod sciezki typu `/tripdata/processed_tmp/year=2024/month=01/...`
+
 ### `scripts/run_mapreduce.py`
-- czyta dane z `HDFS`, konkretnie z `/tripdata/processed/...`
+- czyta dane z `HDFS`, konkretnie z `/tripdata/processed_tmp/...`
 - uruchamia job Hadoop Streaming na tych danych
 - wynik reducera najpierw jest w `HDFS` jako output joba
 - potem skrypt sciaga wynik do lokalnego pliku `outputs/mapreduce_results.tsv`
@@ -247,6 +262,11 @@ Po co nam jest?
 - bo wymaganie na `5.0` mowi, ze glowny zbior danych ma byc zapisany w HDFS
 - bo Hadoop czyta dane wlasnie z HDFS
 - bo dane sa tam ulozone tak, zeby dalo sie je przetwarzac w stylu big data
+
+W naszym projekcie:
+
+- glowny zbior w HDFS to archiwa ZIP w katalogu `raw`
+- dodatkowo mamy tymczasowe wejscie `processed_tmp` tylko do uruchomienia MapReduce
 
 ### Hadoop
 `Hadoop` to ekosystem do przechowywania i przetwarzania duzych danych.
@@ -350,7 +370,7 @@ Czyli moja czesc laczy duze przetwarzanie z prezentacja wynikow.
 ## Jak moge to opowiedziec na konsultacji
 Przykladowo moge powiedziec tak:
 
-"Moja czesc projektu obejmuje warstwe big data i wyniki koncowe. Najpierw przygotowujemy oczyszczone dane do formatu TSV i zapisujemy je w HDFS. Potem uruchamiamy Hadoop Streaming z mapperem i reducerem napisanym w Pythonie. Wyniki joba sa eksportowane do lokalnego pliku, a nastepnie zapisywane jako agregaty w MongoDB Atlas. Dodatkowo przygotowujemy lokalne statystyki do dashboardu w Streamlit, zeby latwo pokazac wyniki analizy."
+"Moja czesc projektu obejmuje warstwe big data i wyniki koncowe. Najpierw zapisujemy glowny zbior danych, czyli archiwa ZIP, do HDFS. Potem przygotowujemy osobne, tymczasowe wejscie TSV do Hadoop Streaming, bo na takim formacie najwygodniej uruchomic mapper i reducer w Pythonie. Wyniki joba sa eksportowane do lokalnego pliku, a nastepnie zapisywane jako agregaty w MongoDB Atlas. Dodatkowo przygotowujemy lokalne statystyki do dashboardu w Streamlit, zeby latwo pokazac wyniki analizy."
 
 ## O co moga zapytac i jak odpowiedziec
 
@@ -376,7 +396,7 @@ W obecnej wersji dashboard czyta lokalne pliki wynikowe z `outputs/`. Atlas sluz
 Moja rola polega na tym, zeby oczyszczone dane zapisac w HDFS, przetworzyc je przez Hadoop Streaming, zapisac agregaty w MongoDB Atlas i pokazac wyniki w czytelnej formie na dashboardzie.
 
 ## Krotkie streszczenie do powiedzenia
-"W naszej czesci projektu odpowiadam za warstwe big data i prezentacje wynikow. Najpierw przygotowujemy oczyszczone dane do formatu TSV i zapisujemy je w HDFS. Potem uruchamiamy Hadoop Streaming z mapperem i reducerem napisanym w Pythonie, zeby policzyc najwazniejsze statystyki, na przyklad liczbe przejazdow, sredni czas czy rozklad po typie klienta i stacji. Wyniki joba zapisujemy do pliku, a potem do MongoDB Atlas jako agregaty. Dodatkowo przygotowujemy lokalne statystyki do dashboardu w Streamlit, zeby latwo pokazac wyniki analizy. Poprawnosc logiki Hadoop sprawdzamy przez porownanie wyniku z obliczeniami referencyjnymi w Pandas dla wybranego miesiaca."
+"W naszej czesci projektu odpowiadam za warstwe big data i prezentacje wynikow. Najpierw zapisujemy do HDFS glowny zbior danych w postaci archiwow ZIP. Potem przygotowujemy tymczasowe pliki TSV do Hadoop Streaming i na nich uruchamiamy mapper i reducer napisany w Pythonie, zeby policzyc najwazniejsze statystyki, na przyklad liczbe przejazdow, sredni czas czy rozklad po typie klienta i stacji. Wyniki joba zapisujemy do pliku, a potem do MongoDB Atlas jako agregaty. Dodatkowo przygotowujemy lokalne statystyki do dashboardu w Streamlit, zeby latwo pokazac wyniki analizy. Poprawnosc logiki Hadoop sprawdzamy przez porownanie wyniku z obliczeniami referencyjnymi w Pandas dla wybranego miesiaca."
 
 
 ### tests/test_manifest.py
