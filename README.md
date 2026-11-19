@@ -148,22 +148,6 @@ python scripts/load_results_atlas.py
 streamlit run app/dashboard.py
 ```
 
-## Proponowany podzial pracy
-### Osoba A
-- `scrape_tripdata.py`
-- `download_and_stage.py`
-- `load_local_mongo.py`
-- `push_to_hdfs.py`
-- Docker i uruchomienie baz
-
-### Osoba B
-- `prepare_mapreduce_input.py`
-- `mapper.py`
-- `reducer.py`
-- `load_results_atlas.py`
-- `run_local_analysis.py`
-- `app/dashboard.py`
-- sprawozdanie i interpretacja wynikow
 
 ## Analizy gotowe w repo
 Skrypt `scripts/run_local_analysis.py` zapisuje:
